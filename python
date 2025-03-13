@@ -1,0 +1,130 @@
+import os
+import re
+import fitz  # PyMuPDF
+import pandas as pd
+from openpyxl import load_workbook
+
+# Ask user for folder and file paths manually
+pdf_folder = input("Enter the full path of the folder containing PDFs: ").strip()
+excel_path = input("Enter the full path of the Excel file (.xlsx): ").strip()
+
+# Check if paths exist
+if not os.path.isdir(pdf_folder):
+    print("Error: The specified PDF folder does not exist.")
+    exit()
+if not os.path.isfile(excel_path):
+    print("Error: The specified Excel file does not exist.")
+    exit()
+
+# Get list of PDFs in the folder
+pdf_files = [f for f in os.listdir(pdf_folder) if f.lower().endswith('.pdf')]
+
+if not pdf_files:
+    print("No PDF files found in the selected folder.")
+    exit()
+
+def extract_file_id(filename):
+    """Extract file ID from filename."""
+    match = re.search(r'^([\w\d]+)', filename)
+    return match.group(1) if match else None
+
+def load_existing_data(file_id, excel_path):
+    """Load existing data from Excel."""
+    try:
+        workbook = load_workbook(excel_path)
+        sheet = workbook.active
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if row[0] == file_id:
+                return {
+                    'co_detector': row[1] if row[1] else "N",
+                    'showerhead_qty': row[2] if row[2] is not None else 0,
+                    'shower_flow': row[3] if row[3] is not None else 0.0,
+                    'kitchen_aerator_qty': row[4] if row[4] is not None else 0,
+                    'aerator_flow': row[5] if row[5] is not None else 0.0,
+                    'bathroom_aerator_qty': row[6] if row[6] is not None else 0,
+                    'pipe_wrap': row[7] if row[7] is not None else 0.0,
+                    'notes': row[8] if row[8] else ""
+                }
+        return None
+    except Exception as e:
+        print(f"Error loading Excel file: {e}")
+        return None
+
+def save_to_excel(file_id, data, excel_path):
+    """Save data to Excel."""
+    try:
+        workbook = load_workbook(excel_path)
+        sheet = workbook.active
+        file_id_found = False
+
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+            if row[0] == file_id:
+                file_id_found = True
+                sheet.cell(row=row_idx, column=2, value=data['co_detector'])
+                sheet.cell(row=row_idx, column=3, value=data['showerhead_qty'])
+                sheet.cell(row=row_idx, column=4, value=data['shower_flow'])
+                sheet.cell(row=row_idx, column=5, value=data['kitchen_aerator_qty'])
+                sheet.cell(row=row_idx, column=6, value=data['aerator_flow'])
+                sheet.cell(row=row_idx, column=7, value=data['bathroom_aerator_qty'])
+                sheet.cell(row=row_idx, column=8, value=data['pipe_wrap'])
+                sheet.cell(row=row_idx, column=9, value=data['notes'])
+                break
+
+        if not file_id_found:
+            next_row = sheet.max_row + 1
+            sheet.cell(row=next_row, column=1, value=file_id)
+            sheet.cell(row=next_row, column=2, value=data['co_detector'])
+            sheet.cell(row=next_row, column=3, value=data['showerhead_qty'])
+            sheet.cell(row=next_row, column=4, value=data['shower_flow'])
+            sheet.cell(row=next_row, column=5, value=data['kitchen_aerator_qty'])
+            sheet.cell(row=next_row, column=6, value=data['aerator_flow'])
+            sheet.cell(row=next_row, column=7, value=data['bathroom_aerator_qty'])
+            sheet.cell(row=next_row, column=8, value=data['pipe_wrap'])
+            sheet.cell(row=next_row, column=9, value=data['notes'])
+
+        workbook.save(excel_path)
+        print(f"✅ Data for {file_id} saved successfully!")
+    except Exception as e:
+        print(f"Error saving to Excel: {e}")
+
+# Process each PDF
+for pdf_filename in pdf_files:
+    pdf_path = os.path.join(pdf_folder, pdf_filename)
+    file_id = extract_file_id(pdf_filename)
+    
+    if not file_id:
+        print(f"Skipping {pdf_filename}: Could not extract file ID.")
+        continue
+
+    print(f"\n📄 Processing {pdf_filename} (ID: {file_id})")
+
+    existing_data = load_existing_data(file_id, excel_path)
+
+    if existing_data:
+        print(f"Existing data found for {file_id}: {existing_data}")
+    else:
+        print("No existing data found. Please enter new data.")
+
+    # Collect user input
+    co_detector = input("CO Detector Provided (Y/N): ") or existing_data.get('co_detector', 'N')
+    showerhead_qty = int(input("Qty of Showerhead: ") or existing_data.get('showerhead_qty', 0))
+    shower_flow = float(input("Shower Flow (gpm): ") or existing_data.get('shower_flow', 0.0))
+    kitchen_aerator_qty = int(input("Qty of Kitchen Aerator: ") or existing_data.get('kitchen_aerator_qty', 0))
+    aerator_flow = float(input("Aerator Flow (gpm): ") or existing_data.get('aerator_flow', 0.0))
+    bathroom_aerator_qty = int(input("Qty of Bathroom Aerators: ") or existing_data.get('bathroom_aerator_qty', 0))
+    pipe_wrap = float(input("Pipe Wrap (Metres): ") or existing_data.get('pipe_wrap', 0.0))
+    notes = input("Notes: ") or existing_data.get('notes', '')
+
+    # Save to Excel
+    save_to_excel(file_id, {
+        'co_detector': co_detector,
+        'showerhead_qty': showerhead_qty,
+        'shower_flow': shower_flow,
+        'kitchen_aerator_qty': kitchen_aerator_qty,
+        'aerator_flow': aerator_flow,
+        'bathroom_aerator_qty': bathroom_aerator_qty,
+        'pipe_wrap': pipe_wrap,
+        'notes': notes
+    }, excel_path)
+
+print("\n✅ All PDFs processed successfully!")
